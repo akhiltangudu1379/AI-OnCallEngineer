@@ -1,5 +1,6 @@
 """Intentionally breakable service used only by the AutoSRE demo."""
-import json, logging, time
+import importlib.util, json, logging, os, time
+from pathlib import Path
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -14,12 +15,20 @@ MODES={"healthy","division_by_zero","missing_config","database_failure","http_50
 def error_event(message:str):
     print(json.dumps({"time":time.time(),"level":"ERROR","message":message}),flush=True)
 
+def load_pricing():
+    configured=Path(os.getenv("PRICING_MODULE_PATH","/artifacts/pricing.py"))
+    target=configured if configured.exists() else Path(__file__).with_name("pricing.py")
+    spec=importlib.util.spec_from_file_location("deployed_pricing",target); module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module); return module
+
 class Fault(BaseModel): mode:str
 
 def diagnose():
     mode=state["mode"]
     if mode=="division_by_zero":
-        try: _=10/0
+        try: load_pricing().calculate_discount(100,0)
+        except ValueError as exc:
+            log.info("pricing input rejected safely: %s",exc)
+            return True,"invalid discount divisor handled safely"
         except ZeroDivisionError:
             error_event("division-by-zero in pricing calculation; ZeroDivisionError at pricing.py:calculate_discount")
             return False,"ZeroDivisionError: division by zero in pricing.py:calculate_discount"
