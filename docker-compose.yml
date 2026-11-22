@@ -6,13 +6,18 @@ services:
     tmpfs: [/tmp]
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
+    environment:
+      PRICING_MODULE_PATH: /artifacts/pricing.py
+    volumes: ["repair-artifacts:/artifacts:ro"]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9000/health')"]
       interval: 10s
       timeout: 5s
       retries: 3
   backend:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     ports: ["8000:8000"]
     environment:
       DATABASE_URL: sqlite:////data/autosre.db
@@ -20,14 +25,47 @@ services:
       AUTOSRE_API_KEY: ${AUTOSRE_API_KEY:-change-me}
       MONITOR_INTERVAL_SECONDS: ${MONITOR_INTERVAL_SECONDS:-15}
       FAILURE_THRESHOLD: ${FAILURE_THRESHOLD:-2}
-    volumes: ["autosre-data:/data"]
-    depends_on: [demo-app]
+      ALLOWED_REPOSITORY_ROOT: /repair-target
+      SANDBOX_RUNNER_URL: http://sandbox-runner:9100
+      SANDBOX_RUNNER_TOKEN: ${SANDBOX_RUNNER_TOKEN:-change-sandbox-token}
+      DEPLOYMENT_ARTIFACT_DIR: /artifacts
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITHUB_REPAIR_REPOSITORY: ${GITHUB_REPAIR_REPOSITORY:-}
+      GITHUB_BASE_BRANCH: ${GITHUB_BASE_BRANCH:-main}
+      GITHUB_PR_ENABLED: ${GITHUB_PR_ENABLED:-false}
+      LLM_PROVIDER: ${LLM_PROVIDER:-heuristic}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.openai.com/v1}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+    volumes: ["autosre-data:/data", "repair-artifacts:/artifacts"]
+    depends_on: [demo-app, sandbox-runner]
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
+    networks: [default, sandbox]
+  sandbox-runner:
+    build:
+      context: .
+      dockerfile: sandbox-runner/Dockerfile
+    environment:
+      SANDBOX_RUNNER_TOKEN: ${SANDBOX_RUNNER_TOKEN:-change-sandbox-token}
+      SANDBOX_SOURCE_ROOT: /repair-target
+      SANDBOX_WORK_ROOT: /tmp/work
+    read_only: true
+    tmpfs: ["/tmp/work:rw,noexec,nosuid,size=128m,uid=65532,gid=65532,mode=0700"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+    networks: [sandbox]
   frontend:
     build: ./frontend
     ports: ["5173:80"]
     depends_on: [backend]
 volumes:
   autosre-data:
+  repair-artifacts:
+networks:
+  sandbox:
+    internal: true
 

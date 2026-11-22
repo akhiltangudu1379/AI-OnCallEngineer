@@ -12,7 +12,7 @@ class FakeClient:
     def __init__(self,responses): self.responses=iter(responses)
     def get(self,url): return next(self.responses)
 
-def test_incident_deduplication_and_investigation():
+def test_incident_deduplication_and_investigation(monkeypatch):
     with SessionLocal() as db:
         service=Service(name="Checkout",url="http://checkout.local",health_path="/health"); db.add(service); db.commit()
         failure='{"detail":"ZeroDivisionError: division by zero"}'
@@ -26,6 +26,10 @@ def test_incident_deduplication_and_investigation():
         repair=propose_repair(db,incident)
         try: approval(repair.id,Approval(approved=True,actor="operator"),db); assert False
         except HTTPException as exc: assert exc.status_code==409
+        class SandboxResponse:
+            def raise_for_status(self):pass
+            def json(self):return {"passed":True,"status":"sandbox_passed","output":"baseline failed; patched tests passed","exit_code":0,"duration_ms":12}
+        monkeypatch.setattr("app.phase2_services.httpx.post",lambda *a,**k:SandboxResponse())
         tested=sandbox_test(repair.id,db); assert tested["passed"] is True
         approved=approval(repair.id,Approval(approved=True,actor="operator"),db)
         assert approved["status"]=="approved"
