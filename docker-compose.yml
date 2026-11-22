@@ -1,0 +1,33 @@
+services:
+  demo-app:
+    build: ./demo-app
+    ports: ["9000:9000"]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+  backend:
+    build: ./backend
+    ports: ["8000:8000"]
+    environment:
+      DATABASE_URL: sqlite:////data/autosre.db
+      DEMO_APP_URL: http://demo-app:9000
+      AUTOSRE_API_KEY: ${AUTOSRE_API_KEY:-change-me}
+      MONITOR_INTERVAL_SECONDS: ${MONITOR_INTERVAL_SECONDS:-15}
+      FAILURE_THRESHOLD: ${FAILURE_THRESHOLD:-2}
+    volumes: ["autosre-data:/data"]
+    depends_on: [demo-app]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+  frontend:
+    build: ./frontend
+    ports: ["5173:80"]
+    depends_on: [backend]
+volumes:
+  autosre-data:
+
